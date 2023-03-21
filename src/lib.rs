@@ -26,10 +26,10 @@ use std::iter;
 /// - [Lempel–Ziv–Welch](https://en.wikipedia.org/wiki/Lempel%E2%80%93Ziv%E2%80%93Welch)
 /// - [可能是最通俗的Lempel-Ziv-Welch (LZW)无损压缩算法详述](https://cloud.tencent.com/developer/article/1097573)
 ///
-pub fn compress(data: &[u8]) -> Vec<usize> {
+pub fn compress(data: &[u8]) -> Vec<u32> {
     let mut dictionary: HashMap<Vec<u8>, usize> =
         (0..256).map(|i| (vec![i as u8], i as usize)).collect();
-    let mut result: Vec<usize> = Vec::new();
+    let mut result: Vec<u32> = Vec::new();
     let mut p: Vec<u8> = Vec::new();
 
     for &c in data {
@@ -37,14 +37,14 @@ pub fn compress(data: &[u8]) -> Vec<usize> {
         if dictionary.contains_key(&pc) {
             p = pc;
         } else {
-            result.push(dictionary[&p]);
+            result.push(dictionary[&p] as u32);
             dictionary.insert(pc.clone(), dictionary.len() as usize);
             p = vec![c];
         }
     }
 
     if !p.is_empty() {
-        result.push(dictionary[&p]);
+        result.push(dictionary[&p] as u32);
     }
 
     result
@@ -78,9 +78,9 @@ pub fn compress(data: &[u8]) -> Vec<usize> {
 ///
 /// - [Lempel–Ziv–Welch](https://en.wikipedia.org/wiki/Lempel%E2%80%93Ziv%E2%80%93Welch)
 /// - [可能是最通俗的Lempel-Ziv-Welch (LZW)无损压缩算法详述](https://cloud.tencent.com/developer/article/1097573)
-pub fn decompress(data: &[usize]) -> Vec<u8> {
-    let mut dictionary: HashMap<usize, Vec<u8>> =
-        (0..256).map(|i| (i as usize, vec![i as u8])).collect();
+pub fn decompress(data: &[u32]) -> Vec<u8> {
+    let mut dictionary: HashMap<u32, Vec<u8>> =
+        (0..256).map(|i| (i as u32, vec![i as u8])).collect();
     let mut result: Vec<u8> = Vec::new();
 
     let mut p: Vec<u8> = dictionary[&data[0]].clone();
@@ -90,7 +90,7 @@ pub fn decompress(data: &[usize]) -> Vec<u8> {
         let entry = dictionary.get(k).expect("Invalid compressed data").clone();
         result.extend(&entry);
         dictionary.insert(
-            dictionary.len(),
+            dictionary.len() as u32,
             p.into_iter().chain(entry[0..1].iter().cloned()).collect(),
         );
         p = entry;
