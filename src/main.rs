@@ -1,44 +1,77 @@
-use lzw::compress;
-use lzw::decompress;
+use clap::Parser;
+use lzw::*;
+use std::io::{self, Read, Write};
+use std::path::PathBuf;
 
-fn main() {
-    let data = "";
-    let data = data.as_bytes();
+#[derive(Parser)]
+struct Cli {
+    #[arg(
+        short = 'i',
+        long = "input",
+        help = "Input file, if not specified, stdin will be used"
+    )]
+    input: Option<PathBuf>,
+    #[arg(
+        short = 'o',
+        long = "output",
+        help = "Output file, if not specified, stdout will be used"
+    )]
+    output: Option<PathBuf>,
+    #[arg(
+        short = 'd',
+        long = "decompress",
+        default_value = "false",
+        help = "If true decompress the input file, else compress the input file"
+    )]
+    decompress: bool,
+}
 
-    let compressed = compress(data);
+fn main() -> io::Result<()> {
+    let args = Cli::parse();
+    let mut buffer = Vec::new();
 
-    println!("Compressed: {:?}", compressed);
+    match args.input.clone() {
+        Some(path) => {
+            let file = std::fs::File::open(path).expect("File not found");
+            let mut buf_reader = std::io::BufReader::new(file);
+            buf_reader
+                .read_to_end(&mut buffer)
+                .expect("Error reading file");
+        }
+        None => {
+            let stdin = io::stdin();
+            stdin
+                .lock()
+                .read_to_end(&mut buffer)
+                .expect("Failed to read from stdin");
+        }
+    }
 
-    let decompressed = decompress(&compressed);
-    let decompressed = String::from_utf8(decompressed).unwrap();
+    let output = match args.decompress {
+        false => to_bytes(&compress(&buffer)),
+        true => decompress(&to_u32(&buffer)),
+    };
 
-    println!("Decompressed: {}", decompressed);
+    match args.output {
+        Some(path) => {
+            let mut file = std::fs::File::create(path).expect("Failed to create file");
+            file.write_all(&output)
+        }
+        None => {
+            let mut stdout = io::stdout();
+            stdout.write_all(&output)
+            // println!("{:?}", output);
+            // Ok(())
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs::File;
-    use std::io::prelude::*;
-    use std::io::{BufReader, Read};
-
-    fn to_bytes(input: &Vec<u32>) -> Vec<u8> {
-        let mut output = Vec::new();
-        for value in input {
-            output.extend(&value.to_be_bytes());
-        }
-        output
-    }
-
-    fn to_u32(input: &Vec<u8>) -> Vec<u32> {
-        let mut output = Vec::new();
-        for i in (0..input.len()).step_by(4) {
-            let mut bytes = [0; 4];
-            bytes.copy_from_slice(&input[i..i + 4]);
-            output.push(u32::from_be_bytes(bytes));
-        }
-        output
-    }
+    use assert_cmd::prelude::*;
+    use predicates::prelude::*;
+    use std::process::Command;
 
     #[test]
     fn test_compress_base1() {
@@ -70,51 +103,43 @@ mod tests {
     }
 
     #[test]
-    fn test_simple_file() {
-        let file = File::open("res/simple.txt").unwrap();
-        let mut buf_reader = BufReader::new(file);
-        let mut data = String::new();
-        buf_reader.read_to_string(&mut data).unwrap();
-
-        let mut compressed = compress(data.as_bytes());
-
-        let mut compressed_file = File::create("res/simple.lzw").unwrap();
-        compressed_file
-            .write_all(&to_bytes(&compressed)[..])
-            .unwrap();
-
-        let compressed_file = File::open("res/simple.lzw").unwrap();
-        buf_reader = BufReader::new(compressed_file);
-        let mut byte = Vec::new();
-        buf_reader.read_to_end(&mut byte).unwrap();
-        compressed = to_u32(&byte);
-
+    fn test_base3() {
+        let data = "AAAABBBB";
+        let compressed = compress(data.as_bytes());
         let decompressed = String::from_utf8(decompress(&compressed)).unwrap();
         assert!(decompressed == data);
     }
 
     #[test]
-    fn test_big_file() {
-        let file = File::open("res/alice29.txt").unwrap();
-        let mut buf_reader = BufReader::new(file);
-        let mut data = String::new();
-        buf_reader.read_to_string(&mut data).unwrap();
+    fn test_simple_file() {
+        let mut cmd = Command::cargo_bin("lzw").unwrap();
+        cmd.arg("-i res/simple.txt -o res/simple.lzw");
+        cmd.assert().success();
 
-        let mut compressed = compress(data.as_bytes());
+        let mut cmd = Command::cargo_bin("lzw").unwrap();
+        cmd.arg("-d -i res/simple.lzw | diff res/simple.txt -");
+        cmd.assert().success().stdout(predicate::str::is_empty());
+    }
 
-        let mut compressed_file = File::create("res/alice29.lzw").unwrap();
-        compressed_file
-            .write_all(&to_bytes(&compressed)[..])
-            .unwrap();
+    #[test]
+    fn test_big_file1() {
+        let mut cmd = Command::cargo_bin("lzw").unwrap();
+        cmd.arg("-i res/alice29.txt -o res/alice29.lzw");
+        cmd.assert().success();
 
-        let compressed_file = File::open("res/alice29.lzw").unwrap();
-        buf_reader = BufReader::new(compressed_file);
-        let mut byte = Vec::new();
-        buf_reader.read_to_end(&mut byte).unwrap();
-        let compressed_file = to_u32(&byte);
-        assert!(compressed_file == compressed);
+        let mut cmd = Command::cargo_bin("lzw").unwrap();
+        cmd.arg("-d -i res/alice29.lzw | diff res/alice29.txt -");
+        cmd.assert().success().stdout(predicate::str::is_empty());
+    }
 
-        let decompressed = String::from_utf8(decompress(&compressed)).unwrap();
-        assert!(decompressed == data);
+    #[test]
+    fn test_big_file2() {
+        let mut cmd = Command::cargo_bin("lzw").unwrap();
+        cmd.arg("-i res/bible.txt -o res/bible.lzw");
+        cmd.assert().success();
+
+        let mut cmd = Command::cargo_bin("lzw").unwrap();
+        cmd.arg("-d -i res/bible.lzw | diff res/bible.txt -");
+        cmd.assert().success().stdout(predicate::str::is_empty());
     }
 }

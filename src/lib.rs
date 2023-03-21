@@ -24,21 +24,26 @@ use std::iter;
 /// # References
 ///
 /// - [Lempel–Ziv–Welch](https://en.wikipedia.org/wiki/Lempel%E2%80%93Ziv%E2%80%93Welch)
-/// - [可能是最通俗的Lempel-Ziv-Welch (LZW)无损压缩算法详述](https://cloud.tencent.com/developer/article/1097573)
 ///
-pub fn compress(data: &[u8]) -> Vec<u32> {
-    let mut dictionary: HashMap<Vec<u8>, usize> =
-        (0..256).map(|i| (vec![i as u8], i as usize)).collect();
-    let mut result: Vec<u32> = Vec::new();
-    let mut p: Vec<u8> = Vec::new();
 
-    for &c in data {
+pub fn compress(data: &[u8]) -> Vec<u32> {
+    if data.is_empty() {
+        return Vec::new();
+    }
+
+    let mut dictionary: HashMap<Vec<u8>, u32> =
+        (0..256).map(|i| (vec![i as u8], i as u32)).collect();
+    let mut result: Vec<u32> = Vec::new();
+
+    let mut p: Vec<u8> = vec![data[0]];
+
+    for &c in &data[1..] {
         let pc = p.iter().cloned().chain(iter::once(c)).collect();
         if dictionary.contains_key(&pc) {
             p = pc;
         } else {
+            dictionary.insert(pc.clone(), dictionary.len() as u32);
             result.push(dictionary[&p] as u32);
-            dictionary.insert(pc.clone(), dictionary.len() as usize);
             p = vec![c];
         }
     }
@@ -77,24 +82,60 @@ pub fn compress(data: &[u8]) -> Vec<u32> {
 /// # References
 ///
 /// - [Lempel–Ziv–Welch](https://en.wikipedia.org/wiki/Lempel%E2%80%93Ziv%E2%80%93Welch)
-/// - [可能是最通俗的Lempel-Ziv-Welch (LZW)无损压缩算法详述](https://cloud.tencent.com/developer/article/1097573)
+///
+
 pub fn decompress(data: &[u32]) -> Vec<u8> {
+    if data.is_empty() {
+        return Vec::new();
+    }
+
     let mut dictionary: HashMap<u32, Vec<u8>> =
         (0..256).map(|i| (i as u32, vec![i as u8])).collect();
     let mut result: Vec<u8> = Vec::new();
 
-    let mut p: Vec<u8> = dictionary[&data[0]].clone();
-    result.extend(&p);
+    let mut p: Vec<u8> = dictionary
+        .get(&data[0])
+        .expect("Invalid compressed data")
+        .clone();
+    result.extend(&p.clone());
 
-    for k in &data[1..] {
-        let entry = dictionary.get(k).expect("Invalid compressed data").clone();
-        result.extend(&entry);
-        dictionary.insert(
-            dictionary.len() as u32,
-            p.into_iter().chain(entry[0..1].iter().cloned()).collect(),
-        );
-        p = entry;
+    for &k in &data[1..] {
+        p = match dictionary.get(&k) {
+            Some(value) => {
+                let entry = value.clone();
+                result.extend(entry.clone());
+                dictionary.insert(
+                    dictionary.len() as u32,
+                    p.into_iter().chain(entry[0..1].iter().cloned()).collect(),
+                );
+                entry
+            }
+            None => {
+                p.push(p[0]);
+                result.extend(p.clone());
+                dictionary.insert(dictionary.len() as u32, p.clone());
+                p
+            }
+        };
     }
 
     result
+}
+
+pub fn to_bytes(input: &Vec<u32>) -> Vec<u8> {
+    let mut output = Vec::new();
+    for value in input {
+        output.extend(&value.to_be_bytes());
+    }
+    output
+}
+
+pub fn to_u32(input: &Vec<u8>) -> Vec<u32> {
+    let mut output = Vec::new();
+    for i in (0..input.len()).step_by(4) {
+        let mut bytes = [0; 4];
+        bytes.copy_from_slice(&input[i..i + 4]);
+        output.push(u32::from_be_bytes(bytes));
+    }
+    output
 }
