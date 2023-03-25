@@ -69,9 +69,6 @@ fn main() -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use assert_cmd::prelude::*;
-    use predicates::prelude::*;
-    use std::process::Command;
 
     #[test]
     fn test_compress_base1() {
@@ -112,34 +109,46 @@ mod tests {
 
     #[test]
     fn test_simple_file() {
-        let mut cmd = Command::cargo_bin("lzw").unwrap();
-        cmd.arg("-i res/simple.txt -o res/simple.lzw");
-        cmd.assert().success();
+        let mut buffer = Vec::new();
+        let path = "res/simple.txt";
+        let file = std::fs::File::open(path).expect("File not found");
+        let mut buf_reader = std::io::BufReader::new(file);
+        buf_reader
+            .read_to_end(&mut buffer)
+            .expect("Error reading file");
+        let compressed = to_bytes(&compress(&buffer));
+        let decompress = decompress(&to_u32(&compressed));
 
-        let mut cmd = Command::cargo_bin("lzw").unwrap();
-        cmd.arg("-d -i res/simple.lzw | diff res/simple.txt -");
-        cmd.assert().success().stdout(predicate::str::is_empty());
+        assert_eq!(buffer, decompress);
     }
 
     #[test]
     fn test_big_file1() {
-        let mut cmd = Command::cargo_bin("lzw").unwrap();
-        cmd.arg("-i res/alice29.txt -o res/alice29.lzw");
-        cmd.assert().success();
+        let mut buffer = Vec::new();
+        let path = "res/alice29.txt";
+        let file = std::fs::File::open(path).expect("File not found");
+        let mut buf_reader = std::io::BufReader::new(file);
+        buf_reader
+            .read_to_end(&mut buffer)
+            .expect("Error reading file");
+        let compressed = to_bytes(&compress(&buffer));
+        let decompress = decompress(&to_u32(&compressed));
 
-        let mut cmd = Command::cargo_bin("lzw").unwrap();
-        cmd.arg("-d -i res/alice29.lzw | diff res/alice29.txt -");
-        cmd.assert().success().stdout(predicate::str::is_empty());
+        assert_eq!(buffer, decompress);
     }
 
     #[test]
     fn test_big_file2() {
-        let mut cmd = Command::cargo_bin("lzw").unwrap();
-        cmd.arg("-i res/bible.txt -o res/bible.lzw");
-        cmd.assert().success();
+        let mut buffer = Vec::new();
+        let path = "res/bible.txt";
+        let file = std::fs::File::open(path).expect("File not found");
+        let mut buf_reader = std::io::BufReader::new(file);
+        buf_reader
+            .read_to_end(&mut buffer)
+            .expect("Error reading file");
+        let compressed = to_bytes(&compress(&buffer));
+        let decompress = decompress(&to_u32(&compressed));
 
-        let mut cmd = Command::cargo_bin("lzw").unwrap();
-        cmd.arg("-d -i res/bible.lzw | diff res/bible.txt -");
-        cmd.assert().success().stdout(predicate::str::is_empty());
+        assert_eq!(buffer, decompress);
     }
 }
